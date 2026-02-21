@@ -34,36 +34,50 @@ export default function RootLayout({
         />
       </head>
       <body className="min-h-screen flex flex-col antialiased">
-        {/* Header */}
-        <header className="border-b border-border bg-panel">
+        {/* Header — matches agent-zero.ai navbar style */}
+        <header className="bg-darker border-b border-border/50">
           <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
             <div className="flex h-16 items-center justify-between">
+              {/* Logo */}
               <a href="/" className="flex items-center gap-3">
-                <span className="material-symbols-outlined text-primary text-3xl">
-                  smart_toy
-                </span>
-                <span className="text-xl font-semibold text-text">
-                  Agent Zero Marketplace
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src="https://www.agent-zero.ai/res/a0-fullDark.svg"
+                  alt="Agent Zero"
+                  className="h-8"
+                />
+                <span className="text-sm font-medium text-text-muted hidden sm:inline">
+                  Marketplace
                 </span>
               </a>
+
+              {/* Navigation */}
               <nav className="flex items-center gap-6">
                 <a
                   href="/"
-                  className="text-sm text-text-muted hover:text-text transition-colors"
+                  className="text-sm text-text-muted hover:text-text-bright transition-colors"
                 >
                   Browse
                 </a>
                 <a
                   href="/submit"
-                  className="text-sm text-text-muted hover:text-text transition-colors"
+                  className="text-sm text-text-muted hover:text-text-bright transition-colors"
                 >
                   Submit Plugin
+                </a>
+                <a
+                  href="https://github.com/agent0ai/agent-zero"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-sm text-text-muted hover:text-text-bright transition-colors hidden sm:inline"
+                >
+                  GitHub
                 </a>
                 <a
                   href="https://agent-zero.ai"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-sm text-primary hover:text-accent transition-colors"
+                  className="btn-outline !py-1.5 !px-4 !text-xs"
                 >
                   agent-zero.ai
                 </a>
@@ -75,29 +89,56 @@ export default function RootLayout({
         {/* Main content */}
         <main className="flex-1">{children}</main>
 
-        {/* Footer */}
-        <footer className="border-t border-border bg-panel mt-auto">
-          <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
-            <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-              <p className="text-sm text-text-muted">
-                Agent Zero Plugin Marketplace
-              </p>
+        {/* Footer — matches agent-zero.ai footer style */}
+        <footer className="bg-darker border-t border-border/50 mt-auto">
+          <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-10">
+            <div className="flex flex-col md:flex-row items-center justify-between gap-6">
+              {/* Logo + copyright */}
+              <div className="flex items-center gap-3">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src="https://www.agent-zero.ai/res/a0-fullDark.svg"
+                  alt="Agent Zero"
+                  className="h-6 opacity-60"
+                />
+                <span className="text-sm text-text-muted">
+                  Plugin Marketplace
+                </span>
+              </div>
+
+              {/* Links */}
               <div className="flex items-center gap-6">
                 <a
-                  href="https://github.com/TerminallyLazy/a0-marketplace"
+                  href="https://github.com/agent0ai/agent-zero"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-sm text-text-muted hover:text-text transition-colors"
+                  className="text-sm text-text-muted hover:text-text-bright transition-colors"
                 >
                   GitHub
+                </a>
+                <a
+                  href="https://discord.gg/agent-zero"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-sm text-text-muted hover:text-text-bright transition-colors"
+                >
+                  Discord
                 </a>
                 <a
                   href="https://agent-zero.ai"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-sm text-text-muted hover:text-text transition-colors"
+                  className="text-sm text-text-muted hover:text-text-bright transition-colors"
                 >
-                  Agent Zero
+                  Website
+                </a>
+                <a
+                  href="https://agent-zero.ai/docs"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-sm text-text-muted hover:text-text-bright transition-colors"
+                >
+                  Docs
                 </a>
               </div>
             </div>

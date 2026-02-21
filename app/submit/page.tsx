@@ -120,205 +120,219 @@ export default function SubmitPage() {
   };
 
   return (
-    <div className="mx-auto max-w-2xl px-4 sm:px-6 lg:px-8 py-12">
-      {/* Page header */}
-      <div className="mb-10">
-        <h1 className="text-3xl font-bold text-text mb-2">Submit a Plugin</h1>
-        <p className="text-text-muted">
-          Add your plugin to the Agent Zero Marketplace. A pull request will be
-          created for review.
-        </p>
-      </div>
-
-      {/* Result banner */}
-      {result && (
-        <div
-          className={`mb-8 rounded-xl border p-4 ${
-            result.ok
-              ? "border-success/30 bg-success/10 text-success"
-              : "border-danger/30 bg-danger/10 text-danger"
-          }`}
-        >
-          <div className="flex items-start gap-3">
-            <span className="material-symbols-outlined mt-0.5">
-              {result.ok ? "check_circle" : "error"}
+    <div>
+      {/* Hero banner */}
+      <section className="relative overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-b from-darker via-dark to-dark" />
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(13,110,253,0.06),transparent_70%)]" />
+        <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-14 text-center">
+          <div className="flex justify-center mb-4">
+            <span className="badge-pill bg-primary/15 text-primary border border-primary/30">
+              <span className="material-symbols-outlined text-sm">publish</span>
+              Submit a Plugin
             </span>
-            <div>
-              <p className="font-medium">{result.message}</p>
-              {result.pr_url && (
-                <a
-                  href={result.pr_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="mt-2 inline-flex items-center gap-1 text-sm underline"
-                >
-                  View Pull Request
-                  <span className="material-symbols-outlined text-sm">
-                    open_in_new
-                  </span>
-                </a>
-              )}
+          </div>
+          <h1 className="text-3xl sm:text-4xl font-bold text-text-bright mb-3">
+            Share your plugin with the community
+          </h1>
+          <p className="text-text-muted max-w-xl mx-auto">
+            Add your plugin to the Agent Zero Marketplace. A pull request will be
+            created for review by the maintainers.
+          </p>
+        </div>
+      </section>
+
+      <div className="mx-auto max-w-2xl px-4 sm:px-6 lg:px-8 py-10">
+        {/* Result banner */}
+        {result && (
+          <div
+            className={`mb-8 rounded-lg border p-4 ${
+              result.ok
+                ? "border-success/30 bg-success/10 text-success"
+                : "border-danger/30 bg-danger/10 text-danger"
+            }`}
+          >
+            <div className="flex items-start gap-3">
+              <span className="material-symbols-outlined mt-0.5">
+                {result.ok ? "check_circle" : "error"}
+              </span>
+              <div>
+                <p className="font-medium">{result.message}</p>
+                {result.pr_url && (
+                  <a
+                    href={result.pr_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-2 inline-flex items-center gap-1 text-sm underline"
+                  >
+                    View Pull Request
+                    <span className="material-symbols-outlined text-sm">
+                      open_in_new
+                    </span>
+                  </a>
+                )}
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Form */}
-      <form onSubmit={handleSubmit} className="space-y-6">
-        {/* Repository URL */}
-        <Field
-          label="Repository URL"
-          required
-          error={errors.repo_url}
-          hint="The GitHub repository containing your plugin."
-        >
-          <input
-            type="url"
-            value={form.repo_url}
-            onChange={(e) => updateField("repo_url", e.target.value)}
-            placeholder="https://github.com/username/repo"
-            className="form-input"
-          />
-        </Field>
+        {/* Form */}
+        <form onSubmit={handleSubmit} className="space-y-6">
+          {/* Repository URL */}
+          <Field
+            label="Repository URL"
+            required
+            error={errors.repo_url}
+            hint="The GitHub repository containing your plugin."
+          >
+            <input
+              type="url"
+              value={form.repo_url}
+              onChange={(e) => updateField("repo_url", e.target.value)}
+              placeholder="https://github.com/username/repo"
+              className="form-input"
+            />
+          </Field>
 
-        {/* Plugin Path */}
-        <Field
-          label="Plugin Path"
-          hint='Subdirectory within the repo. Use "." for root.'
-        >
-          <input
-            type="text"
-            value={form.plugin_path}
-            onChange={(e) => updateField("plugin_path", e.target.value)}
-            placeholder="."
-            className="form-input"
-          />
-        </Field>
-
-        {/* Plugin Name */}
-        <Field label="Plugin Name" required error={errors.name}>
-          <input
-            type="text"
-            value={form.name}
-            onChange={(e) => updateField("name", e.target.value)}
-            placeholder="My Awesome Plugin"
-            className="form-input"
-          />
-        </Field>
-
-        {/* Plugin ID */}
-        <Field
-          label="Plugin ID"
-          required
-          error={errors.id}
-          hint="Auto-generated from name. Edit to customize."
-        >
-          <input
-            type="text"
-            value={form.id}
-            onChange={(e) => {
-              setAutoId(false);
-              updateField("id", e.target.value);
-            }}
-            placeholder="my-awesome-plugin"
-            className="form-input font-mono"
-          />
-        </Field>
-
-        {/* Description */}
-        <Field label="Description" required error={errors.description}>
-          <textarea
-            value={form.description}
-            onChange={(e) => updateField("description", e.target.value)}
-            placeholder="Briefly describe what your plugin does..."
-            rows={3}
-            className="form-input resize-none"
-          />
-        </Field>
-
-        {/* Author */}
-        <Field
-          label="Author GitHub Handle"
-          required
-          error={errors.author}
-        >
-          <input
-            type="text"
-            value={form.author}
-            onChange={(e) => updateField("author", e.target.value)}
-            placeholder="username"
-            className="form-input"
-          />
-        </Field>
-
-        {/* Tags */}
-        <Field label="Tags" hint="Comma-separated (e.g. code, web, database)">
-          <input
-            type="text"
-            value={form.tags}
-            onChange={(e) => updateField("tags", e.target.value)}
-            placeholder="code, web, database"
-            className="form-input"
-          />
-        </Field>
-
-        {/* Icon */}
-        <Field
-          label="Icon"
-          hint={
-            <span>
-              A{" "}
-              <a
-                href="https://fonts.google.com/icons"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-primary underline"
-              >
-                Material Symbols
-              </a>{" "}
-              icon name.
-            </span>
-          }
-        >
-          <div className="flex items-center gap-3">
+          {/* Plugin Path */}
+          <Field
+            label="Plugin Path"
+            hint='Subdirectory within the repo. Use "." for root.'
+          >
             <input
               type="text"
-              value={form.icon}
-              onChange={(e) => updateField("icon", e.target.value)}
-              placeholder="extension"
-              className="form-input flex-1"
+              value={form.plugin_path}
+              onChange={(e) => updateField("plugin_path", e.target.value)}
+              placeholder="."
+              className="form-input"
             />
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary border border-border">
-              <span className="material-symbols-outlined text-2xl">
-                {form.icon || "extension"}
-              </span>
-            </div>
-          </div>
-        </Field>
+          </Field>
 
-        {/* Submit */}
-        <button
-          type="submit"
-          disabled={submitting}
-          className="w-full flex items-center justify-center gap-2 rounded-xl bg-primary px-6 py-3 text-sm font-semibold text-white hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-        >
-          {submitting ? (
-            <>
-              <span className="material-symbols-outlined animate-spin text-lg">
-                progress_activity
+          {/* Plugin Name */}
+          <Field label="Plugin Name" required error={errors.name}>
+            <input
+              type="text"
+              value={form.name}
+              onChange={(e) => updateField("name", e.target.value)}
+              placeholder="My Awesome Plugin"
+              className="form-input"
+            />
+          </Field>
+
+          {/* Plugin ID */}
+          <Field
+            label="Plugin ID"
+            required
+            error={errors.id}
+            hint="Auto-generated from name. Edit to customize."
+          >
+            <input
+              type="text"
+              value={form.id}
+              onChange={(e) => {
+                setAutoId(false);
+                updateField("id", e.target.value);
+              }}
+              placeholder="my-awesome-plugin"
+              className="form-input font-mono"
+            />
+          </Field>
+
+          {/* Description */}
+          <Field label="Description" required error={errors.description}>
+            <textarea
+              value={form.description}
+              onChange={(e) => updateField("description", e.target.value)}
+              placeholder="Briefly describe what your plugin does..."
+              rows={3}
+              className="form-input resize-none"
+            />
+          </Field>
+
+          {/* Author */}
+          <Field
+            label="Author GitHub Handle"
+            required
+            error={errors.author}
+          >
+            <input
+              type="text"
+              value={form.author}
+              onChange={(e) => updateField("author", e.target.value)}
+              placeholder="username"
+              className="form-input"
+            />
+          </Field>
+
+          {/* Tags */}
+          <Field label="Tags" hint="Comma-separated (e.g. code, web, database)">
+            <input
+              type="text"
+              value={form.tags}
+              onChange={(e) => updateField("tags", e.target.value)}
+              placeholder="code, web, database"
+              className="form-input"
+            />
+          </Field>
+
+          {/* Icon */}
+          <Field
+            label="Icon"
+            hint={
+              <span>
+                A{" "}
+                <a
+                  href="https://fonts.google.com/icons"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-primary underline"
+                >
+                  Material Symbols
+                </a>{" "}
+                icon name.
               </span>
-              Submitting...
-            </>
-          ) : (
-            <>
-              <span className="material-symbols-outlined text-lg">
-                publish
-              </span>
-              Submit Plugin
-            </>
-          )}
-        </button>
-      </form>
+            }
+          >
+            <div className="flex items-center gap-3">
+              <input
+                type="text"
+                value={form.icon}
+                onChange={(e) => updateField("icon", e.target.value)}
+                placeholder="extension"
+                className="form-input flex-1"
+              />
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary border border-primary/20">
+                <span className="material-symbols-outlined text-2xl">
+                  {form.icon || "extension"}
+                </span>
+              </div>
+            </div>
+          </Field>
+
+          {/* Submit */}
+          <button
+            type="submit"
+            disabled={submitting}
+            className="btn-primary w-full !py-3"
+          >
+            {submitting ? (
+              <>
+                <span className="material-symbols-outlined animate-spin text-lg">
+                  progress_activity
+                </span>
+                Submitting...
+              </>
+            ) : (
+              <>
+                <span className="material-symbols-outlined text-lg">
+                  publish
+                </span>
+                Submit Plugin
+              </>
+            )}
+          </button>
+        </form>
+      </div>
     </div>
   );
 }

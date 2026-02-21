@@ -45,15 +45,15 @@ export default function FilterTabs({ plugins }: { plugins: Plugin[] }) {
       {/* Search + Tabs bar */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-8">
         {/* Tabs */}
-        <div className="flex items-center gap-1 rounded-lg bg-panel border border-border p-1">
+        <div className="flex items-center gap-1 rounded-md bg-darker border border-border/50 p-1">
           {tabs.map((tab) => (
             <button
               key={tab.key}
               onClick={() => setActiveTab(tab.key)}
-              className={`flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
+              className={`flex items-center gap-2 rounded px-4 py-2 text-sm font-medium transition-colors ${
                 activeTab === tab.key
                   ? "bg-primary text-white"
-                  : "text-text-muted hover:text-text"
+                  : "text-text-muted hover:text-text-bright"
               }`}
             >
               {tab.label}
@@ -80,7 +80,7 @@ export default function FilterTabs({ plugins }: { plugins: Plugin[] }) {
             placeholder="Search plugins..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full rounded-lg border border-border bg-panel pl-10 pr-4 py-2.5 text-sm text-text placeholder:text-text-muted focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary transition-colors"
+            className="w-full rounded-md border border-border/50 bg-darker pl-10 pr-4 py-2.5 text-sm text-text placeholder:text-text-muted focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/50 transition-colors"
           />
         </div>
       </div>
