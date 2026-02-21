@@ -7,6 +7,7 @@ export interface Plugin {
   description: string;
   author: string;
   repo_url: string;
+  branch?: string;
   plugin_path: string;
   version: string;
   featured?: boolean;
