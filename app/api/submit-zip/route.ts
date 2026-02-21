@@ -58,6 +58,23 @@ const BLOCKED_EXTENSIONS = new Set([
 const MAX_SINGLE_FILE_SIZE = 5 * 1024 * 1024;
 
 /**
+ * Returns true for zip entries that are OS-generated junk and should be
+ * ignored during plugin discovery, validation, and repo push.
+ *
+ * Covers:
+ *  - macOS resource-fork metadata (`__MACOSX/` directory tree)
+ *  - macOS Finder metadata (`.DS_Store`)
+ *  - Windows thumbnail cache (`Thumbs.db`)
+ */
+function isJunkEntry(entryPath: string): boolean {
+  const normalized = entryPath.replace(/\\/g, "/");
+  if (normalized.startsWith("__MACOSX/") || normalized === "__MACOSX") return true;
+  const basename = normalized.split("/").pop() || "";
+  if (basename === ".DS_Store" || basename === "Thumbs.db") return true;
+  return false;
+}
+
+/**
  * POST /api/submit-zip
  *
  * Accepts a multipart form with:
@@ -240,6 +257,7 @@ export async function POST(request: NextRequest) {
 
     for (const [filePath, zipEntry] of Object.entries(zip.files)) {
       if (zipEntry.dir) continue; // skip directories
+      if (isJunkEntry(filePath)) continue; // skip OS-generated junk
 
       // Strip the prefix folder if plugin.json was nested
       let repoPath = filePath;
@@ -556,7 +574,7 @@ async function validatePlugin(
   }
 
   // ─── 5. File-level security checks ────────────────────
-  const allPaths = Object.keys(zip.files);
+  const allPaths = Object.keys(zip.files).filter((p) => !isJunkEntry(p));
 
   for (const filePath of allPaths) {
     // Path traversal
@@ -668,6 +686,7 @@ function findPluginJson(zip: JSZip): {
   const topDirs = new Set<string>();
 
   for (const entry of entries) {
+    if (isJunkEntry(entry)) continue;
     const parts = entry.split("/");
     if (parts.length >= 2 && parts[0]) {
       topDirs.add(parts[0]);
