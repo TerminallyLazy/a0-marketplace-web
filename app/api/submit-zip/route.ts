@@ -6,12 +6,56 @@ const REGISTRY_REPO = "TerminallyLazy/a0-marketplace";
 const REGISTRY_FILE = "registry.json";
 const MAX_ZIP_SIZE = 10 * 1024 * 1024; // 10 MB
 
+// ─── Plugin validation types ────────────────────────────
+// Mirrors Agent Zero's PluginMetadata Pydantic model from
+// python/helpers/plugins.py — the runtime source of truth.
+
 interface PluginJson {
   name?: string;
   description?: string;
   version?: string;
+  settings_sections?: string[];
+  per_project_config?: boolean;
+  per_agent_config?: boolean;
   [key: string]: unknown;
 }
+
+interface ValidationResult {
+  valid: boolean;
+  errors: string[];
+  warnings: string[];
+}
+
+// Known Agent Zero plugin directories that indicate actual functionality
+const KNOWN_PLUGIN_DIRS = [
+  "api/",
+  "webui/",
+  "tools/",
+  "prompts/",
+  "extensions/",
+  "helpers/",
+  "agents/",
+];
+
+// File extensions that should never appear in a plugin
+const BLOCKED_EXTENSIONS = new Set([
+  ".exe",
+  ".dll",
+  ".so",
+  ".dylib",
+  ".bat",
+  ".cmd",
+  ".sh",
+  ".msi",
+  ".app",
+  ".dmg",
+  ".deb",
+  ".rpm",
+  ".pkg",
+]);
+
+// Suspiciously large individual files (5 MB)
+const MAX_SINGLE_FILE_SIZE = 5 * 1024 * 1024;
 
 /**
  * POST /api/submit-zip
@@ -105,23 +149,28 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Security: check for path traversal
-    const fileEntries = Object.keys(zip.files);
-    for (const path of fileEntries) {
-      if (path.includes("..") || path.startsWith("/")) {
-        return NextResponse.json(
-          { ok: false, error: "Zip contains invalid file paths." },
-          { status: 400 }
-        );
-      }
+    // ─── 2b. Comprehensive validation ─────────────────────
+    const validation = await validatePlugin(zip, pluginJson, stripPrefix);
+
+    if (!validation.valid) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "Plugin validation failed.",
+          details: validation.errors,
+          warnings: validation.warnings,
+        },
+        { status: 400 }
+      );
     }
 
-    // Parse plugin.json content for enrichment
+    // Parse plugin.json for metadata enrichment
     let pluginMeta: PluginJson = {};
     try {
       const pluginJsonContent = await pluginJson.async("string");
       pluginMeta = JSON.parse(pluginJsonContent);
     } catch {
+      // Shouldn't reach here — validatePlugin already checked JSON parsing
       return NextResponse.json(
         { ok: false, error: "plugin.json is not valid JSON." },
         { status: 400 }
@@ -342,7 +391,7 @@ export async function POST(request: NextRequest) {
     if (!updateRes.ok) throw new Error("Failed to update registry file.");
 
     // Create PR
-    const prBody = [
+    const prBodyParts = [
       "## Community Plugin Submission (Zip Upload)",
       "",
       `**Plugin Name:** ${name}`,
@@ -357,10 +406,25 @@ export async function POST(request: NextRequest) {
       "### Tags",
       "",
       tagList.join(", ") || "None",
+    ];
+
+    // Surface validation warnings in the PR for reviewers
+    if (validation.warnings.length > 0) {
+      prBodyParts.push(
+        "",
+        "### \u26a0\ufe0f Validation Warnings",
+        "",
+        ...validation.warnings.map((w) => `- ${w}`),
+      );
+    }
+
+    prBodyParts.push(
       "",
       "---",
       "*This plugin was submitted via zip upload and automatically pushed to the community plugins organization.*",
-    ].join("\n");
+    );
+
+    const prBody = prBodyParts.join("\n");
 
     const prRes = await fetch(
       `https://api.github.com/repos/${REGISTRY_REPO}/pulls`,
@@ -382,6 +446,7 @@ export async function POST(request: NextRequest) {
       ok: true,
       pr_url: prData.html_url,
       repo_url: `https://github.com/${repoFullName}`,
+      warnings: validation.warnings,
     });
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : "Submission failed.";
@@ -390,6 +455,193 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
+}
+
+/**
+ * Validate the full plugin structure inside a zip archive.
+ *
+ * Checks (hard errors — block submission):
+ *   - plugin.json is valid JSON
+ *   - plugin.json has non-empty "name" and "description" fields
+ *   - Field types match Agent Zero's PluginMetadata Pydantic model
+ *   - No path traversal (.. or leading /)
+ *   - No blocked file extensions (.exe, .dll, .so, etc.)
+ *   - No individual file exceeds 5 MB
+ *
+ * Checks (soft warnings — included in PR):
+ *   - version field is missing or not semver-like
+ *   - No recognized plugin directories (api/, webui/, tools/, etc.)
+ *   - settings_sections references but no webui/config.html
+ */
+async function validatePlugin(
+  zip: JSZip,
+  pluginJsonEntry: JSZip.JSZipObject,
+  stripPrefix: string
+): Promise<ValidationResult> {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+
+  // ─── 1. Parse plugin.json ──────────────────────────────
+  let meta: PluginJson;
+  try {
+    const raw = await pluginJsonEntry.async("string");
+    meta = JSON.parse(raw);
+  } catch {
+    return { valid: false, errors: ["plugin.json is not valid JSON."], warnings };
+  }
+
+  if (typeof meta !== "object" || meta === null || Array.isArray(meta)) {
+    return {
+      valid: false,
+      errors: ["plugin.json must be a JSON object (not array or primitive)."],
+      warnings,
+    };
+  }
+
+  // ─── 2. Required fields ────────────────────────────────
+  if (!meta.name || typeof meta.name !== "string" || !meta.name.trim()) {
+    errors.push(
+      'plugin.json must have a non-empty "name" field (string). This is shown in the Agent Zero UI.'
+    );
+  }
+
+  if (
+    !meta.description ||
+    typeof meta.description !== "string" ||
+    !meta.description.trim()
+  ) {
+    errors.push(
+      'plugin.json must have a non-empty "description" field (string).'
+    );
+  }
+
+  // ─── 3. Field type validation ──────────────────────────
+  if (meta.version !== undefined && typeof meta.version !== "string") {
+    errors.push('"version" must be a string (e.g. "1.0.0").');
+  }
+
+  if (meta.settings_sections !== undefined) {
+    if (!Array.isArray(meta.settings_sections)) {
+      errors.push('"settings_sections" must be an array of strings.');
+    } else if (
+      meta.settings_sections.some((s: unknown) => typeof s !== "string")
+    ) {
+      errors.push('"settings_sections" must contain only strings.');
+    }
+  }
+
+  if (
+    meta.per_project_config !== undefined &&
+    typeof meta.per_project_config !== "boolean"
+  ) {
+    errors.push('"per_project_config" must be a boolean (true/false).');
+  }
+
+  if (
+    meta.per_agent_config !== undefined &&
+    typeof meta.per_agent_config !== "boolean"
+  ) {
+    errors.push('"per_agent_config" must be a boolean (true/false).');
+  }
+
+  // ─── 4. Version format warning ─────────────────────────
+  if (!meta.version || typeof meta.version !== "string" || !meta.version.trim()) {
+    warnings.push(
+      'No "version" field in plugin.json. Consider adding one (e.g. "1.0.0").'
+    );
+  } else if (!/^\d+\.\d+\.\d+/.test(meta.version)) {
+    warnings.push(
+      `Version "${meta.version}" doesn't follow semver format (e.g. "1.0.0"). Agent Zero will still load it, but semver is recommended.`
+    );
+  }
+
+  // ─── 5. File-level security checks ────────────────────
+  const allPaths = Object.keys(zip.files);
+
+  for (const filePath of allPaths) {
+    // Path traversal
+    if (filePath.includes("..") || filePath.startsWith("/")) {
+      errors.push(
+        `Invalid file path "${filePath}" — paths must not contain ".." or start with "/".`
+      );
+      continue;
+    }
+
+    // Normalize relative to plugin root
+    let relPath = filePath;
+    if (stripPrefix && filePath.startsWith(stripPrefix)) {
+      relPath = filePath.slice(stripPrefix.length);
+    }
+
+    // Blocked extensions
+    const ext = relPath.includes(".")
+      ? "." + relPath.split(".").pop()!.toLowerCase()
+      : "";
+    if (BLOCKED_EXTENSIONS.has(ext)) {
+      errors.push(
+        `Blocked file type "${ext}" found: "${relPath}". Binary executables are not allowed in plugins.`
+      );
+    }
+
+    // Individual file size
+    const entry = zip.files[filePath];
+    if (!entry.dir) {
+      const buf = await entry.async("arraybuffer");
+      if (buf.byteLength > MAX_SINGLE_FILE_SIZE) {
+        const sizeMB = (buf.byteLength / (1024 * 1024)).toFixed(1);
+        errors.push(
+          `File "${relPath}" is ${sizeMB} MB — individual files must be under 5 MB.`
+        );
+      }
+    }
+  }
+
+  // ─── 6. Structure warnings ─────────────────────────────
+  // Check if any recognized plugin directories exist
+  const relPaths = allPaths.map((p) =>
+    stripPrefix && p.startsWith(stripPrefix) ? p.slice(stripPrefix.length) : p
+  );
+
+  const hasKnownDir = KNOWN_PLUGIN_DIRS.some((dir) =>
+    relPaths.some((p) => p.startsWith(dir))
+  );
+
+  if (!hasKnownDir) {
+    warnings.push(
+      "No recognized plugin directories found (api/, webui/, tools/, prompts/, extensions/, helpers/, agents/). " +
+        "This is allowed, but most plugins include at least one of these."
+    );
+  }
+
+  // Check if settings_sections is set but no config.html exists
+  if (
+    Array.isArray(meta.settings_sections) &&
+    meta.settings_sections.length > 0
+  ) {
+    const hasConfigHtml = relPaths.some((p) => p === "webui/config.html");
+    if (!hasConfigHtml) {
+      warnings.push(
+        `plugin.json declares settings_sections [${meta.settings_sections.join(", ")}] but no "webui/config.html" was found. ` +
+          "The settings tab will appear empty in Agent Zero."
+      );
+    }
+  }
+
+  // Check for config.default.json if settings are declared
+  if (
+    Array.isArray(meta.settings_sections) &&
+    meta.settings_sections.length > 0
+  ) {
+    const hasDefaultConfig = relPaths.some((p) => p === "config.default.json");
+    if (!hasDefaultConfig) {
+      warnings.push(
+        "Plugin has settings_sections but no config.default.json. " +
+          "Consider adding default configuration values."
+      );
+    }
+  }
+
+  return { valid: errors.length === 0, errors, warnings };
 }
 
 /**

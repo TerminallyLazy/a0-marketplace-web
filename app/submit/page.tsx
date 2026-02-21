@@ -59,6 +59,8 @@ export default function SubmitPage() {
     message: string;
     pr_url?: string;
     repo_url?: string;
+    details?: string[];
+    warnings?: string[];
   } | null>(null);
   const [errors, setErrors] = useState<
     Partial<Record<keyof FormState | "file", string>>
@@ -193,9 +195,14 @@ export default function SubmitPage() {
               "Plugin submitted! A GitHub repository and pull request have been created.",
             pr_url: data.pr_url,
             repo_url: data.repo_url,
+            warnings: data.warnings,
           });
         } else {
-          setResult({ ok: false, message: data.error || "Submission failed." });
+          setResult({
+            ok: false,
+            message: data.error || "Submission failed.",
+            details: data.details,
+          });
         }
       }
     } catch {
@@ -247,8 +254,44 @@ export default function SubmitPage() {
               <span className="material-symbols-outlined mt-0.5">
                 {result.ok ? "check_circle" : "error"}
               </span>
-              <div>
+              <div className="flex-1">
                 <p className="font-medium">{result.message}</p>
+
+                {/* Validation errors (on failure) */}
+                {result.details && result.details.length > 0 && (
+                  <ul className="mt-2 space-y-1 text-sm">
+                    {result.details.map((d, i) => (
+                      <li key={i} className="flex items-start gap-1.5">
+                        <span className="material-symbols-outlined text-sm mt-0.5 shrink-0">
+                          close
+                        </span>
+                        {d}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+
+                {/* Validation warnings (on success) */}
+                {result.ok && result.warnings && result.warnings.length > 0 && (
+                  <div className="mt-3 rounded border border-warning/30 bg-warning/10 p-3">
+                    <p className="text-xs font-medium text-warning mb-1.5 flex items-center gap-1">
+                      <span className="material-symbols-outlined text-sm">
+                        warning
+                      </span>
+                      Validation Warnings
+                    </p>
+                    <ul className="space-y-1 text-xs text-warning/90">
+                      {result.warnings.map((w, i) => (
+                        <li key={i} className="flex items-start gap-1.5">
+                          <span className="shrink-0">&bull;</span>
+                          {w}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* Links */}
                 <div className="mt-2 flex flex-col gap-1">
                   {result.pr_url && (
                     <a
