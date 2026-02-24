@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import JSZip from "jszip";
+import yaml from "js-yaml";
 
 const COMMUNITY_ORG = "a0-community-plugins";
 const REGISTRY_REPO = "TerminallyLazy/a0-marketplace";
@@ -56,6 +57,23 @@ const BLOCKED_EXTENSIONS = new Set([
 
 // Suspiciously large individual files (5 MB)
 const MAX_SINGLE_FILE_SIZE = 5 * 1024 * 1024;
+
+/**
+ * Returns true for zip entries that are OS-generated junk and should be
+ * ignored during plugin discovery, validation, and repo push.
+ *
+ * Covers:
+ *  - macOS resource-fork metadata (`__MACOSX/` directory tree)
+ *  - macOS Finder metadata (`.DS_Store`)
+ *  - Windows thumbnail cache (`Thumbs.db`)
+ */
+function isJunkEntry(entryPath: string): boolean {
+  const normalized = entryPath.replace(/\\/g, "/");
+  if (normalized.startsWith("__MACOSX/") || normalized === "__MACOSX") return true;
+  const basename = normalized.split("/").pop() || "";
+  if (basename === ".DS_Store" || basename === "Thumbs.db") return true;
+  return false;
+}
 
 /**
  * POST /api/submit-zip
@@ -136,21 +154,21 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Find plugin.json — at root or one directory level deep
-    const { pluginJson, stripPrefix } = findPluginJson(zip);
-    if (!pluginJson) {
+    // Find plugin.yaml — at root or one directory level deep
+    const { pluginYaml, stripPrefix } = findPluginYaml(zip);
+    if (!pluginYaml) {
       return NextResponse.json(
         {
           ok: false,
           error:
-            "No plugin.json found. It must be at the zip root or inside a single top-level folder.",
+            "No plugin.yaml found. It must be at the zip root or inside a single top-level folder.",
         },
         { status: 400 }
       );
     }
 
     // ─── 2b. Comprehensive validation ─────────────────────
-    const validation = await validatePlugin(zip, pluginJson, stripPrefix);
+    const validation = await validatePlugin(zip, pluginYaml, stripPrefix);
 
     if (!validation.valid) {
       return NextResponse.json(
@@ -164,15 +182,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Parse plugin.json for metadata enrichment
-    let pluginMeta: PluginJson = {};
+    
+    // Parse plugin.yaml for metadata enrichment
+    let pluginMeta: PluginYaml = {};
     try {
-      const pluginJsonContent = await pluginJson.async("string");
-      pluginMeta = JSON.parse(pluginJsonContent);
-    } catch {
+      const pluginYamlContent = await pluginYaml.async("string");
+      pluginMeta = yaml.load(pluginYamlContent) as PluginYaml;
+    } catch (e) {
       // Shouldn't reach here — validatePlugin already checked JSON parsing
       return NextResponse.json(
-        { ok: false, error: "plugin.json is not valid JSON." },
+        { ok: false, error: "plugin.yaml is not valid YAML." },
         { status: 400 }
       );
     }
@@ -208,7 +227,7 @@ export async function POST(request: NextRequest) {
           name: repoName,
           description: `${name} — Community plugin for Agent Zero`,
           private: false,
-          auto_init: false, // we'll push our own initial commit
+          auto_init: true, // seed repo so Git Data API works
         }),
       }
     );
@@ -229,7 +248,27 @@ export async function POST(request: NextRequest) {
     const newRepo = await createRepoRes.json();
     const repoFullName = newRepo.full_name; // e.g. "a0-community-plugins/my-plugin"
 
+    // Helper: delete the repo on failure so we don't leave empty shells
+    const cleanupRepo = async () => {
+      await fetch(`https://api.github.com/repos/${repoFullName}`, {
+        method: "DELETE",
+        headers: ghHeaders,
+      }).catch(() => {}); // best-effort
+    };
+
+    try {
     // ─── 5. Push files via Git Data API ─────────────────────
+    // Get the initial commit SHA (created by auto_init)
+    const initRefRes = await fetch(
+      `https://api.github.com/repos/${repoFullName}/git/ref/heads/main`,
+      { headers: ghHeaders }
+    );
+    if (!initRefRes.ok) {
+      throw new Error("Failed to read initial commit from new repository.");
+    }
+    const initRefData = await initRefRes.json();
+    const parentSha = initRefData.object.sha;
+
     // Build blobs for every file in the zip
     const treeItems: Array<{
       path: string;
@@ -240,6 +279,7 @@ export async function POST(request: NextRequest) {
 
     for (const [filePath, zipEntry] of Object.entries(zip.files)) {
       if (zipEntry.dir) continue; // skip directories
+      if (isJunkEntry(filePath)) continue; // skip OS-generated junk
 
       // Strip the prefix folder if plugin.json was nested
       let repoPath = filePath;
@@ -263,7 +303,10 @@ export async function POST(request: NextRequest) {
       );
 
       if (!blobRes.ok) {
-        throw new Error(`Failed to create blob for ${repoPath}`);
+        const blobErr = await blobRes.json().catch(() => ({}));
+        throw new Error(
+          `Failed to create blob for ${repoPath}: ${blobErr.message || blobRes.status}`
+        );
       }
 
       const blobData = await blobRes.json();
@@ -291,7 +334,7 @@ export async function POST(request: NextRequest) {
     if (!treeRes.ok) throw new Error("Failed to create git tree.");
     const treeData = await treeRes.json();
 
-    // Create commit
+    // Create commit (parent is the auto_init commit)
     const commitRes = await fetch(
       `https://api.github.com/repos/${repoFullName}/git/commits`,
       {
@@ -300,26 +343,26 @@ export async function POST(request: NextRequest) {
         body: JSON.stringify({
           message: `Initial commit: ${name}`,
           tree: treeData.sha,
-          parents: [], // orphan commit (new repo, no parents)
+          parents: [parentSha],
         }),
       }
     );
     if (!commitRes.ok) throw new Error("Failed to create git commit.");
     const commitData = await commitRes.json();
 
-    // Create main branch ref
+    // Update main branch ref to point to the new commit
     const refRes = await fetch(
-      `https://api.github.com/repos/${repoFullName}/git/refs`,
+      `https://api.github.com/repos/${repoFullName}/git/refs/heads/main`,
       {
-        method: "POST",
+        method: "PATCH",
         headers: ghHeaders,
         body: JSON.stringify({
-          ref: "refs/heads/main",
           sha: commitData.sha,
+          force: true,
         }),
       }
     );
-    if (!refRes.ok) throw new Error("Failed to create main branch.");
+    if (!refRes.ok) throw new Error("Failed to update main branch.");
 
     // ─── 6. Create registry PR ──────────────────────────────
     // Get main branch SHA of registry repo
@@ -448,6 +491,11 @@ export async function POST(request: NextRequest) {
       repo_url: `https://github.com/${repoFullName}`,
       warnings: validation.warnings,
     });
+    } catch (repoErr) {
+      // Clean up the newly created repo so we don't leave empty shells
+      await cleanupRepo();
+      throw repoErr; // re-throw to the outer catch
+    }
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : "Submission failed.";
     return NextResponse.json(
@@ -556,7 +604,7 @@ async function validatePlugin(
   }
 
   // ─── 5. File-level security checks ────────────────────
-  const allPaths = Object.keys(zip.files);
+  const allPaths = Object.keys(zip.files).filter((p) => !isJunkEntry(p));
 
   for (const filePath of allPaths) {
     // Path traversal
@@ -668,6 +716,7 @@ function findPluginJson(zip: JSZip): {
   const topDirs = new Set<string>();
 
   for (const entry of entries) {
+    if (isJunkEntry(entry)) continue;
     const parts = entry.split("/");
     if (parts.length >= 2 && parts[0]) {
       topDirs.add(parts[0]);
