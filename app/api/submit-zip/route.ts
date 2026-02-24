@@ -11,7 +11,7 @@ const MAX_ZIP_SIZE = 10 * 1024 * 1024; // 10 MB
 // Mirrors Agent Zero's PluginMetadata Pydantic model from
 // python/helpers/plugins.py — the runtime source of truth.
 
-interface PluginJson {
+interface PluginYaml {
   name?: string;
   description?: string;
   version?: string;
@@ -83,7 +83,7 @@ function isJunkEntry(entryPath: string): boolean {
  *   - name, id, description, author, tags, icon: metadata fields
  *
  * Pipeline:
- *   1. Extract zip, find plugin.json (root or one level deep)
+ *   1. Extract zip, find plugin.yaml (root or one level deep)
  *   2. Validate structure and size
  *   3. Create repo under a0-community-plugins org
  *   4. Push all files via Git Data API (blobs -> tree -> commit -> ref)
@@ -188,8 +188,8 @@ export async function POST(request: NextRequest) {
     try {
       const pluginYamlContent = await pluginYaml.async("string");
       pluginMeta = yaml.load(pluginYamlContent) as PluginYaml;
-    } catch (e) {
-      // Shouldn't reach here — validatePlugin already checked JSON parsing
+    } catch {
+      // Shouldn't reach here — validatePlugin already checked YAML parsing
       return NextResponse.json(
         { ok: false, error: "plugin.yaml is not valid YAML." },
         { status: 400 }
@@ -281,7 +281,7 @@ export async function POST(request: NextRequest) {
       if (zipEntry.dir) continue; // skip directories
       if (isJunkEntry(filePath)) continue; // skip OS-generated junk
 
-      // Strip the prefix folder if plugin.json was nested
+      // Strip the prefix folder if plugin.yaml was nested
       let repoPath = filePath;
       if (stripPrefix && filePath.startsWith(stripPrefix)) {
         repoPath = filePath.slice(stripPrefix.length);
@@ -509,8 +509,8 @@ export async function POST(request: NextRequest) {
  * Validate the full plugin structure inside a zip archive.
  *
  * Checks (hard errors — block submission):
- *   - plugin.json is valid JSON
- *   - plugin.json has non-empty "name" and "description" fields
+ *   - plugin.yaml is valid YAML
+ *   - plugin.yaml has non-empty "name" and "description" fields
  *   - Field types match Agent Zero's PluginMetadata Pydantic model
  *   - No path traversal (.. or leading /)
  *   - No blocked file extensions (.exe, .dll, .so, etc.)
@@ -523,33 +523,33 @@ export async function POST(request: NextRequest) {
  */
 async function validatePlugin(
   zip: JSZip,
-  pluginJsonEntry: JSZip.JSZipObject,
+  pluginYamlEntry: JSZip.JSZipObject,
   stripPrefix: string
 ): Promise<ValidationResult> {
   const errors: string[] = [];
   const warnings: string[] = [];
 
-  // ─── 1. Parse plugin.json ──────────────────────────────
-  let meta: PluginJson;
+  // ─── 1. Parse plugin.yaml ──────────────────────────────
+  let meta: PluginYaml;
   try {
-    const raw = await pluginJsonEntry.async("string");
-    meta = JSON.parse(raw);
+    const raw = await pluginYamlEntry.async("string");
+    const parsed = yaml.load(raw);
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+      return {
+        valid: false,
+        errors: ["plugin.yaml must be a YAML mapping/object (not array or primitive)."],
+        warnings,
+      };
+    }
+    meta = parsed as PluginYaml;
   } catch {
-    return { valid: false, errors: ["plugin.json is not valid JSON."], warnings };
-  }
-
-  if (typeof meta !== "object" || meta === null || Array.isArray(meta)) {
-    return {
-      valid: false,
-      errors: ["plugin.json must be a JSON object (not array or primitive)."],
-      warnings,
-    };
+    return { valid: false, errors: ["plugin.yaml is not valid YAML."], warnings };
   }
 
   // ─── 2. Required fields ────────────────────────────────
   if (!meta.name || typeof meta.name !== "string" || !meta.name.trim()) {
     errors.push(
-      'plugin.json must have a non-empty "name" field (string). This is shown in the Agent Zero UI.'
+      'plugin.yaml must have a non-empty "name" field (string). This is shown in the Agent Zero UI.'
     );
   }
 
@@ -559,7 +559,7 @@ async function validatePlugin(
     !meta.description.trim()
   ) {
     errors.push(
-      'plugin.json must have a non-empty "description" field (string).'
+      'plugin.yaml must have a non-empty "description" field (string).'
     );
   }
 
@@ -595,7 +595,7 @@ async function validatePlugin(
   // ─── 4. Version format warning ─────────────────────────
   if (!meta.version || typeof meta.version !== "string" || !meta.version.trim()) {
     warnings.push(
-      'No "version" field in plugin.json. Consider adding one (e.g. "1.0.0").'
+      'No "version" field in plugin.yaml. Consider adding one (e.g. "1.0.0").'
     );
   } else if (!/^\d+\.\d+\.\d+/.test(meta.version)) {
     warnings.push(
@@ -669,7 +669,7 @@ async function validatePlugin(
     const hasConfigHtml = relPaths.some((p) => p === "webui/config.html");
     if (!hasConfigHtml) {
       warnings.push(
-        `plugin.json declares settings_sections [${meta.settings_sections.join(", ")}] but no "webui/config.html" was found. ` +
+        `plugin.yaml declares settings_sections [${meta.settings_sections.join(", ")}] but no "webui/config.html" was found. ` +
           "The settings tab will appear empty in Agent Zero."
       );
     }
@@ -693,25 +693,25 @@ async function validatePlugin(
 }
 
 /**
- * Locate plugin.json in a zip archive.
+ * Locate plugin.yaml in a zip archive.
  *
  * Checks:
- *   1. Root level: "plugin.json"
- *   2. One level deep: "<folder>/plugin.json" (common when zipping a directory)
+ *   1. Root level: "plugin.yaml"
+ *   2. One level deep: "<folder>/plugin.yaml" (common when zipping a directory)
  *
  * Returns the JSZip entry and the prefix to strip from paths.
  */
-function findPluginJson(zip: JSZip): {
-  pluginJson: JSZip.JSZipObject | null;
+function findPluginYaml(zip: JSZip): {
+  pluginYaml: JSZip.JSZipObject | null;
   stripPrefix: string;
 } {
   // Check root
-  const rootEntry = zip.file("plugin.json");
+  const rootEntry = zip.file("plugin.yaml");
   if (rootEntry) {
-    return { pluginJson: rootEntry, stripPrefix: "" };
+    return { pluginYaml: rootEntry, stripPrefix: "" };
   }
 
-  // Check one level deep (e.g. "my-plugin/plugin.json")
+  // Check one level deep (e.g. "my-plugin/plugin.yaml")
   const entries = Object.keys(zip.files);
   const topDirs = new Set<string>();
 
@@ -723,14 +723,14 @@ function findPluginJson(zip: JSZip): {
     }
   }
 
-  // If there's exactly one top-level directory, look for plugin.json inside it
+  // If there's exactly one top-level directory, look for plugin.yaml inside it
   if (topDirs.size === 1) {
     const dirName = [...topDirs][0];
-    const nestedEntry = zip.file(`${dirName}/plugin.json`);
+    const nestedEntry = zip.file(`${dirName}/plugin.yaml`);
     if (nestedEntry) {
-      return { pluginJson: nestedEntry, stripPrefix: `${dirName}/` };
+      return { pluginYaml: nestedEntry, stripPrefix: `${dirName}/` };
     }
   }
 
-  return { pluginJson: null, stripPrefix: "" };
+  return { pluginYaml: null, stripPrefix: "" };
 }
