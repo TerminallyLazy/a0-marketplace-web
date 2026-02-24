@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import JSZip from "jszip";
+import yaml from "js-yaml";
 
 const COMMUNITY_ORG = "a0-community-plugins";
 const REGISTRY_REPO = "TerminallyLazy/a0-marketplace";
@@ -153,21 +154,21 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Find plugin.json — at root or one directory level deep
-    const { pluginJson, stripPrefix } = findPluginJson(zip);
-    if (!pluginJson) {
+    // Find plugin.yaml — at root or one directory level deep
+    const { pluginYaml, stripPrefix } = findPluginYaml(zip);
+    if (!pluginYaml) {
       return NextResponse.json(
         {
           ok: false,
           error:
-            "No plugin.json found. It must be at the zip root or inside a single top-level folder.",
+            "No plugin.yaml found. It must be at the zip root or inside a single top-level folder.",
         },
         { status: 400 }
       );
     }
 
     // ─── 2b. Comprehensive validation ─────────────────────
-    const validation = await validatePlugin(zip, pluginJson, stripPrefix);
+    const validation = await validatePlugin(zip, pluginYaml, stripPrefix);
 
     if (!validation.valid) {
       return NextResponse.json(
@@ -181,15 +182,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Parse plugin.json for metadata enrichment
-    let pluginMeta: PluginJson = {};
+    
+    // Parse plugin.yaml for metadata enrichment
+    let pluginMeta: PluginYaml = {};
     try {
-      const pluginJsonContent = await pluginJson.async("string");
-      pluginMeta = JSON.parse(pluginJsonContent);
-    } catch {
+      const pluginYamlContent = await pluginYaml.async("string");
+      pluginMeta = yaml.load(pluginYamlContent) as PluginYaml;
+    } catch (e) {
       // Shouldn't reach here — validatePlugin already checked JSON parsing
       return NextResponse.json(
-        { ok: false, error: "plugin.json is not valid JSON." },
+        { ok: false, error: "plugin.yaml is not valid YAML." },
         { status: 400 }
       );
     }
