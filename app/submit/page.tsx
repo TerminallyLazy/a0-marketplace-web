@@ -405,7 +405,7 @@ export default function SubmitPage() {
               label="Plugin Zip File"
               required
               error={errors.file}
-              hint="Upload a .zip file containing your plugin (max 10 MB). Must include a plugin.json."
+              hint="Upload a .zip file containing your plugin (max 10 MB). Must include a plugin.yaml."
             >
               <div
                 onDrop={handleDrop}
@@ -617,7 +617,7 @@ export default function SubmitPage() {
                   <li>
                     Your zip is validated (must contain a{" "}
                     <code className="text-xs bg-panel px-1 py-0.5 rounded">
-                      plugin.json
+                      plugin.yaml
                     </code>
                     )
                   </li>

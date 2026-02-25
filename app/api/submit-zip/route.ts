@@ -157,11 +157,15 @@ export async function POST(request: NextRequest) {
     // Find plugin.yaml — at root or one directory level deep
     const { pluginYaml, stripPrefix } = findPluginYaml(zip);
     if (!pluginYaml) {
+      const legacyPluginJson = findLegacyPluginJson(zip);
+      const missingYamlMessage = legacyPluginJson
+        ? `Found "${legacyPluginJson}" but this endpoint now requires "plugin.yaml". Rename/migrate plugin.json to plugin.yaml and try again.`
+        : "No plugin.yaml found. It must be at the zip root or inside a single top-level folder.";
+
       return NextResponse.json(
         {
           ok: false,
-          error:
-            "No plugin.yaml found. It must be at the zip root or inside a single top-level folder.",
+          error: missingYamlMessage,
         },
         { status: 400 }
       );
@@ -690,6 +694,20 @@ async function validatePlugin(
   }
 
   return { valid: errors.length === 0, errors, warnings };
+}
+
+/**
+ * Locate legacy plugin.json metadata to provide a clearer migration error.
+ */
+function findLegacyPluginJson(zip: JSZip): string | null {
+  const entries = Object.keys(zip.files);
+  for (const entry of entries) {
+    if (isJunkEntry(entry)) continue;
+    if (entry === "plugin.json" || entry.endsWith("/plugin.json")) {
+      return entry;
+    }
+  }
+  return null;
 }
 
 /**
